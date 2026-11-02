@@ -1,5 +1,7 @@
 # agent-dispatch-guard
 
+[![skills.sh](https://skills.sh/b/phillui-37/agent-dispatch-guard)](https://skills.sh/phillui-37/agent-dispatch-guard)
+
 Two model-agnostic skills about the two things that quietly cost you the most tokens:
 **delegation** and **waiting**.
 
