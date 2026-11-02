@@ -1,6 +1,6 @@
 ---
 name: dispatch-guard
-description: Decide whether to delegate work to a subagent/agent-crew member or keep it inline, and why. Use before any Task / subagent / agent-crew dispatch, when a plan looks like "spawn N agents", when token cost or context drift is noticed, or when reviewing a multi-agent setup. Model-agnostic: it reasons about context handoffs, not about specific models or projects.
+description: Decide whether to delegate work to a subagent or agent-crew member, or keep it inline. Use before any Task or subagent dispatch, when a plan looks like "spawn N agents", when token cost or context drift is noticed, or when reviewing a multi-agent setup. Model-agnostic — it reasons about context handoffs, never about specific models or projects.
 ---
 
 # Dispatch Guard
