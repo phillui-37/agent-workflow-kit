@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "tools": [
+    {
+      "id": "sample-search",
+      "summary": "Example local search helper",
+      "aliases": ["lookup", "find files"],
+      "category": "discovery",
+      "kind": "script",
+      "source": "./search_helper.py",
+      "command": "python search_helper.py --query <text>",
+      "platforms": ["macos", "windows", "linux"],
+      "dependencies": ["python3"],
+      "effects": "read-only",
+      "status": "unverified",
+      "verified_at": null,
+      "notes": "Replace with a real reusable tool entry."
+    }
+  ]
+}

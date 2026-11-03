@@ -1,92 +1,119 @@
-# agent-dispatch-guard
+# agent-workflow-kit
 
-[![skills.sh](https://skills.sh/b/phillui-37/agent-dispatch-guard)](https://skills.sh/phillui-37/agent-dispatch-guard)
+[![skills.sh](https://skills.sh/b/phillui-37/agent-workflow-kit)](https://skills.sh/phillui-37/agent-workflow-kit)
 
-Two model-agnostic skills about the two things that quietly cost you the most tokens:
-**delegation** and **waiting**.
+Model-agnostic skills for **delegation, waiting and tool reuse**. Keep useful evidence,
+avoid repeated work, and measure cost per completed task.
 
-No model names. No vendor names. No project names. Both reason about **context handoffs**,
-so they work the same on any machine, any provider, any repo.
+Previously named `agent-dispatch-guard`. The repository grew beyond delegation; the
+individual skill names remain stable so you can install only what you need.
 
 | Skill | Question it answers |
 |---|---|
-| [`dispatch-guard`](skills/dispatch-guard/SKILL.md) | Should this be a subagent, or should I just do it? |
-| [`bounded-wait`](skills/bounded-wait/SKILL.md) | How do I wait for this without burning context or hanging? |
-
-## The two principles
-
-> **Dispatch** — A subagent buys you an *isolated context*. That is the only thing it buys.
-> If the subtask doesn't need isolation, you paid for it and got nothing.
-
-> **Waiting** — Waiting time alone is not model token consumption. Avoid repeated
-> model-driven polling. Prefer reliable completion callbacks for long work; tell the user
-> what is running before yielding.
-
-Delegation and waiting can add model calls, context replay and retries. Actual cost
-also depends on cache hits, output and provider billing. Measure successfully completed
-tasks rather than assuming that every wait or short answer has the same cost.
+| [dispatch-guard](skills/dispatch-guard/SKILL.md) | Should this work be delegated or kept in the current context? |
+| [bounded-wait](skills/bounded-wait/SKILL.md) | Should I block, probe readiness, or resume through a completion callback? |
+| [tool-inventory](skills/tool-inventory/SKILL.md) | Does a reusable script or tool already solve this problem? |
 
 ## Install
 
 ```bash
-# both skills, project-level
-npx skills add phillui-37/agent-dispatch-guard
+# Select skills interactively
+npx skills add phillui-37/agent-workflow-kit
 
-# one of them
-npx skills add phillui-37/agent-dispatch-guard --skill dispatch-guard
+# All three, globally, without prompts
+npx skills add phillui-37/agent-workflow-kit -g --skill '*' -y
 
-# globally, no prompts
-npx skills add phillui-37/agent-dispatch-guard --global --all
+# Just discovery and reuse
+npx skills add phillui-37/agent-workflow-kit -g --skill tool-inventory -y
 ```
 
-**Alma**
+Windows uses the same `npx` commands. Install Node.js and Python with Scoop when needed:
+
+```powershell
+scoop install nodejs-lts python
+```
+
+Alma can also install the repository:
 
 ```bash
-alma skill install phillui-37/agent-dispatch-guard
+alma skill install phillui-37/agent-workflow-kit
 ```
 
-**Manual** — copy either `skills/<name>/` directory into your skills folder
-(`~/.claude/skills/`, `~/.config/alma/skills/`, …).
+Manual installation: copy a `skills/<name>/` directory into your client's skills folder.
+Preserve the `scripts/` and `assets/` subdirectories for tool-inventory. Other runtimes
+can follow the skill instructions directly; verify their tool and callback support.
 
-**Anything else** — each skill ends with a plain-text `Policy block`. Paste that into your
-agent's system instructions; it's the whole thing in 8 lines.
+## What each skill does
 
-## dispatch-guard
+**dispatch-guard** makes context handoff costs explicit: restatement, rediscovery,
+additional tool loops and incomplete reports. It provides scope/output contracts,
+fan-out/depth guardrails, model tiers and accounting checks. Compare correctness,
+latency, cached/uncached input, output and retries. A low output/input ratio or high
+subagent share alone cannot establish waste.
 
-| Section | What it gives you |
-|---|---|
-| Cost model | The four things every dispatch pays, regardless of outcome |
-| Decision table | 5 questions; any "inline" answer stops the dispatch |
-| Anti-patterns | 6 shapes that always lose, and why |
-| Legit uses | 4 shapes where isolation genuinely wins |
-| Guardrails | Fan-out caps, depth limit, scope/contract requirement |
-| Model tiers | T1/T2/T3 placement rules — the orchestrator is always T1 |
-| Measurement | How to catch split-ledger under-reporting |
+**bounded-wait** chooses bounded blocking for short work and reliable managed completion
+callbacks for long work. Before yielding, tell the user what is running; retain job ID,
+results, deadline and completion condition. Check the final receipt on resumption.
+Plain nohup is not a callback; silence or low local CPU during remote reasoning is not
+proof of a hang. Waiting time itself is not model token consumption.
 
-## bounded-wait
+**tool-inventory** adds a stdlib-only Python CLI and a small metadata catalog. Search
+purpose, aliases, category and OS before writing another helper. Scripts remain at their
+canonical sources; the catalog neither copies them nor executes stored commands.
 
-| Section | What it gives you |
-|---|---|
-| Wait shapes | Bounded blocking / readiness probe / managed completion callback |
-| Callback contract | Job identity, result location, deadline, user update and final receipt |
-| Hang diagnosis | Remote reasoning silence and low local CPU alone do not establish a hang |
-| Recipe | Bounded Bash HTTP probe, including a timeout on each request |
-| Evidence | Preserve original logs and distinguish timeout, failure and success |
-| Cost model | Count actual model calls, tokens, retries and outcomes |
+## Tool inventory setup
 
-## Calibrating on your machine
+The skill bundles:
 
-Don't trust either skill blindly — both ship with a checklist.
+```text
+skills/tool-inventory/
+  SKILL.md
+  scripts/tool_index.py
+  scripts/test_tool_index.py
+  assets/catalog.example.json
+  assets/context-state-template.md
+```
 
-1. Find where per-turn usage is recorded, and whether delegated work lands in the **same**
-   place. If there's only one ledger, delegation is invisible — cap harder.
-2. Classify your last 5 delegations: isolated-IO, disjoint research, blind eval,
-   discussion-split, reviewer, chain. The last three should have been inline.
-3. Compute delegated-token share as an audit signal, then compare cost and correctness
-   per completed task. A high share alone does not prove waste.
-4. Count model-driven polls, distinguish them from blocking observations, and verify
-   whether the host can reliably resume the conversation on completion.
-5. Write the result into the local policy blocks.
+Choose a registry path, normally `~/.agents/tool-inventory.json`. Copy the example only
+for a new registry; never overwrite an existing one. Replace example source paths with
+actual tools on that machine. You can instead set `TOOL_INVENTORY` or pass `--registry`.
+
+Run directly from the repository or installed skill directory:
+
+```bash
+python3 skills/tool-inventory/scripts/tool_index.py find archive --os macos --limit 5
+python3 skills/tool-inventory/scripts/tool_index.py show archive-helper
+python3 skills/tool-inventory/scripts/tool_index.py check archive-helper
+```
+
+On Windows replace `python3` with `python`, and use `--os windows`. An optional shell
+wrapper can name this command `tool-index`; skills-only installation does not add a
+binary to PATH. The example catalog does not establish tool availability on Windows.
+
+`find`, `show`, `categories` and `check` read metadata. `check` examines paths and
+executable dependencies without running catalog commands; existence is not health or
+permission. `add <entry.json>` validates and saves an entry, refusing replacement unless
+`--replace` is explicit; it retains the previous registry in one `.bak` file.
+
+Keep entries small: id, summary, aliases, category, source, invocation, platform,
+dependencies, effects, status and verification date. Do not store credentials or private
+inputs. `context-state-template.md` supports current decisions, superseded decisions,
+evidence, pending work and callback identity at a task boundary.
+
+## Verification and limits
+
+```bash
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s skills/tool-inventory/scripts -v
+```
+
+Four tests cover alias/platform queries, validated mutation, absent-registry errors and
+checks not executing commands. Executed on macOS; Windows end-to-end validation remains
+pending. Search is lexical, not semantic. There is no daemon, automatic filesystem scan,
+new routing proxy, or compulsory compressor. Callback support belongs to each runtime.
+
+This repository contains reusable procedures and generic fixtures, not a machine's
+private registry, credentials or conversation records. Preserve raw evidence when a
+summary cannot answer the question.
 
 ## License
 
