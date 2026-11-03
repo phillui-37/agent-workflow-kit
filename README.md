@@ -18,12 +18,13 @@ so they work the same on any machine, any provider, any repo.
 > **Dispatch** — A subagent buys you an *isolated context*. That is the only thing it buys.
 > If the subtask doesn't need isolation, you paid for it and got nothing.
 
-> **Waiting** — Cost of a wait ≈ context size × number of wait steps. It doesn't depend on
-> wall-clock time. Minimise **steps**, not seconds.
+> **Waiting** — Waiting time alone is not model token consumption. Avoid repeated
+> model-driven polling. Prefer reliable completion callbacks for long work; tell the user
+> what is running before yielding.
 
-Together they explain most of a multi-agent setup's bill: the parent pays to restate
-context it already had, the child pays to rebuild it, and every status check in between
-re-sends the whole thing.
+Delegation and waiting can add model calls, context replay and retries. Actual cost
+also depends on cache hits, output and provider billing. Measure successfully completed
+tasks rather than assuming that every wait or short answer has the same cost.
 
 ## Install
 
@@ -66,12 +67,12 @@ agent's system instructions; it's the whole thing in 8 lines.
 
 | Section | What it gives you |
 |---|---|
-| Three rules | One step; condition not duration; distinguishable outcome |
-| Shape table | Block / probe-with-deadline / detach-and-collect-once |
-| Recipe | `wait_for <seconds> <cmd>` with early exit and a timeout code |
-| Readiness probes | Cheapest reliable condition per target type |
-| Anti-patterns | fixed `sleep`, cross-turn polling, polling a push queue, `tail -f` |
-| Cost model | Why steps matter and seconds don't |
+| Wait shapes | Bounded blocking / readiness probe / managed completion callback |
+| Callback contract | Job identity, result location, deadline, user update and final receipt |
+| Hang diagnosis | Remote reasoning silence and low local CPU alone do not establish a hang |
+| Recipe | Bounded Bash HTTP probe, including a timeout on each request |
+| Evidence | Preserve original logs and distinguish timeout, failure and success |
+| Cost model | Count actual model calls, tokens, retries and outcomes |
 
 ## Calibrating on your machine
 
@@ -81,9 +82,10 @@ Don't trust either skill blindly — both ship with a checklist.
    place. If there's only one ledger, delegation is invisible — cap harder.
 2. Classify your last 5 delegations: isolated-IO, disjoint research, blind eval,
    discussion-split, reviewer, chain. The last three should have been inline.
-3. Compute delegated-token share. Above ~50% means the dispatch default is wrong.
-4. Count your wait steps per turn. If a single job produces more than one wait step in the
-   conversation, the wait is in the wrong shape.
+3. Compute delegated-token share as an audit signal, then compare cost and correctness
+   per completed task. A high share alone does not prove waste.
+4. Count model-driven polls, distinguish them from blocking observations, and verify
+   whether the host can reliably resume the conversation on completion.
 5. Write the result into the local policy blocks.
 
 ## License

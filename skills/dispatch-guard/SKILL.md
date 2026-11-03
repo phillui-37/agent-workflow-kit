@@ -112,13 +112,16 @@ Placement rules:
   If you only read the main usage figure you will systematically under-report. Sum
   **both** before judging. If the split ledger doesn't exist, treat every delegation as
   unmetered and cap harder.
-- Cheap metric: **tokens per delivered conclusion**. If a dispatch consumed far more tokens
-  than the answer's own size, the isolation wasn't needed.
-- Second metric: **output-to-input ratio** for the whole run. Very low means the system is
-  re-reading rather than deciding — that is a context-*selection* problem, not a
-  context-*volume* problem, and more agents make it worse.
-- Third: **duplicate-source rate**. Same URL/file read by parent and child = pure waste.
-  Log what each child read, diff against the parent's reads.
+- Compare **cost per successfully completed task**, including cached/uncached input,
+  output, retries, correctness and latency. A short answer may require substantial valid
+  analysis; tokens per answer length alone cannot show waste.
+- **Output-to-input ratio** is descriptive, not a model-quality or efficiency verdict.
+  Large cached input plus a short correct result can be economical. API list prices are
+  not necessarily subscription quota multipliers.
+- Track **duplicate-source reads**, distinguishing necessary independent verification
+  from redundant discovery. Compare with an inline baseline before attributing savings.
+- Before writing a reusable helper, search the available tool inventory by purpose and
+  platform. Reuse the canonical script rather than regenerating it in a child context.
 
 ## Calibrating this skill on a new machine
 
@@ -129,7 +132,9 @@ Do this once per environment, in five minutes:
 2. Pick the last 5 delegations from history. For each, classify: isolated-IO, disjoint
    research, blind eval, discussion-split, reviewer, chain. Anything in the last three
    categories is a candidate for inlining.
-3. Compute delegated-token share of total. Above ~50%, the dispatch default is wrong.
+3. Compute delegated-token share of total as an audit signal, not a fixed failure
+   threshold. Inspect task independence and outcomes; delegated bulk work can legitimately
+   dominate the total.
 4. Check the crew/agent config for: delegation allowed?, children inherit model?, and
    **circular `delegatesTo` graphs** (A→B→A). Circles don't cost anything by themselves
    but they signal that nobody owns a role, which shows up later as ping-pong dispatching.

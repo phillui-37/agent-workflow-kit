@@ -1,119 +1,119 @@
 ---
 name: bounded-wait
-description: Decide how to wait for long-running work (servers, builds, test suites, jobs, file drops) without burning tokens or hanging a turn. Use when a command needs time to finish, when a service must become ready before the next step, when a job or background task is already running, or when you catch yourself about to write a sleep, a poll loop, or a repeated status check.
+description: Choose bounded blocking waits or reliable asynchronous completion callbacks for long-running work. Use for builds, tests, service readiness, background tasks, or suspected hangs. Avoid repeated model-driven polling, preserve job identity and outcomes, and tell the user when waiting for a callback.
 ---
 
 # Bounded Wait
 
-Waiting is not free and it is not neutral. **Every wait costs a full re-send of the
-conversation context**, whether you fill it with a 5-minute sleep or 30 one-second polls.
-The only question is how many times you pay it.
+Waiting time alone does not consume model tokens. Extra model calls, repeated context,
+generated output and retries do. Choose a wait shape that preserves responsiveness and
+completion evidence without repeatedly asking the model whether a job is done.
 
-Vendor-neutral. No tool names required beyond "run a command" and "read its output".
+## Choose the wait shape
 
-## Three rules
-
-1. **Wait inside one step, never across steps.** A wait that spans turns pays context
-   replay per turn. A wait that lives inside a single command pays once.
-2. **Wait on a condition, never on a duration.** `sleep 20` is a guess. If it's too short
-   you wait again (another replay); if it's too long you burn dead time. Wait for the
-   *thing to be true*, with a deadline.
-3. **Every wait ends with a distinguishable outcome.** Success, timeout, and failure must
-   have different exit codes or markers — otherwise the next step can't tell "not ready
-   yet" from "never going to be ready", and will retry a broken thing forever.
-
-## Pick the shape before you write anything
-
-Ask: **is the total wait shorter than one command's maximum timeout?**
-
-| Total expected wait | Shape |
+| Situation | Shape |
 |---|---|
-| Under the single-call cap (typically 1–10 min) | One blocking call with an explicit timeout. No loop, no polling. |
-| Near the cap, unknown duration | Blocking readiness check with early exit, inside one call (recipe below). |
-| Over the cap, or genuinely long (builds, benchmarks, migrations) | Detach it, return an id immediately, collect **once** at the end with a blocking read. |
-| Already running as a managed job | Don't poll it. Collect once, blocking, at the end. |
+| Short command, within the runtime's foreground limit | One blocking command with an explicit timeout. |
+| Service must become ready | Condition probe with a deadline and a timeout on each probe. Keep attempts outside the model loop. |
+| Long work, runtime supports completion events and session resumption | Managed background job; tell the user what is running; resume on the completion event. |
+| Job already runs under a managed runtime | Use its job ID and completion receipt. Do not relaunch or repeatedly snapshot it. |
+| No reliable callback/resumption support | Bounded blocking output read. If still running, retain the ID and report the actual limitation. |
 
-The failure mode of the last two rows is the worst one: a detached job that gets polled
-every 30 seconds from the conversation is *more* expensive than never detaching it,
-because you pay context replay per poll and gain nothing over one blocking read.
+A plain `nohup ... &` starts a process; it does not establish a callback. A desktop
+notification is not proof that the conversation will resume. Verify the host's actual
+completion mechanism before promising to return automatically.
 
-## Recipe — readiness with early exit
+## Asynchronous completion contract
+
+Before yielding to a callback, record enough information for the resumed session:
+
+- Job ID and originating conversation/task ID.
+- Command, working directory, purpose and authorized scope.
+- Location of results/logs, deadline and success condition.
+- Completion mechanism and how to retrieve the final exit status.
+
+Tell the user, for example: "Tests are running in the background. I'm waiting for the
+completion callback and will report the result here." Include an estimate only when
+there is evidence for it. If other work remains, continue it while the job runs.
+
+Follow the host's execution rules. Some hosts require foreground waiting unless the
+user authorized background work. User authorization to work asynchronously is not
+permission to drop unfinished tasks: retain ownership through completion or failure.
+
+On callback: match the job ID, retrieve its exit status and bounded output, then report
+success, failure or timeout. If delivery repeats, do not repeat the work. After a crash
+or restart, inspect recorded job state before relaunching; absence of a callback is not
+proof that a side-effecting operation never ran. Do not start a new agent solely to wait.
+
+## Silence is not a hang
+
+A remote model may reason for minutes while local CPU usage and stdout stay unchanged.
+Low CPU, stale logs, or no visible tokens alone are insufficient grounds to kill it.
+
+Check the actual request/job state, configured deadline, transport errors and any
+available provider progress. Cancel on user request, a reached deadline, explicit
+failure, or verified deadlock/stall with task-specific evidence. State that evidence.
+
+For scripts you own, emit useful phase/progress receipts when available. Heartbeats
+mean "alive", not "making progress". Do not alter an unrelated program merely to make
+it print every 30 seconds. Do not force streaming or lower reasoning effort just to
+make a reasoning task appear active.
+
+## Readiness recipe (Bash)
 
 ```bash
-# wait_for <seconds> <command...> ; returns 0 ready, 124 timeout
-wait_for() {
-  local deadline=$(( SECONDS + $1 )); shift
-  until "$@" >/dev/null 2>&1; do
-    (( SECONDS >= deadline )) && return 124
+# A healthy HTTP response is the condition; every request and the whole loop are bounded.
+wait_http() {
+  local seconds="$1" url="$2" deadline
+  deadline=$((SECONDS + seconds))
+  while (( SECONDS < deadline )); do
+    if curl -fsS --connect-timeout 1 --max-time 2 "$url" >/dev/null 2>&1; then
+      echo READY
+      return 0
+    fi
     sleep 1
   done
+  echo "TIMEOUT: readiness deadline reached" >&2
+  return 124
 }
-
-wait_for 120 curl -sf http://127.0.0.1:8080/health || { echo "TIMEOUT: not ready in 120s"; exit 124; }
-echo READY
+wait_http 120 http://127.0.0.1:8080/health
 ```
 
-Four properties worth copying: condition-based, deadline-bounded, distinct timeout code,
-and **only the outcome is printed** — not every attempt.
+The caller should also set a tool timeout slightly above the readiness deadline; an
+in-flight probe can overrun it by its own short timeout. This recipe uses Bash `SECONDS`;
+on Windows use an equivalent bounded PowerShell probe, not Bash pasted into PowerShell.
+A socket listener or live process establishes less than an application health response.
+A nonempty result file may still be incomplete: use the producer's completion receipt.
 
-## Readiness conditions, cheapest first
+## Output and evidence
 
-| Target | Condition |
-|---|---|
-| HTTP service | `curl -sf <url>/health` (status code, not body) |
-| Port listener | `nc -z 127.0.0.1 <port>` or a `/dev/tcp` probe |
-| Log line | `grep -q "started" <logfile>` — but see the log rule below |
-| File drop | `test -s <path>` (and optionally `! -name '*.part'`) |
-| Process | `kill -0 <pid>` — confirms alive, not healthy |
+- Return exit status, elapsed time, useful summary, and a pointer to the original log.
+- Keep raw evidence available; a summary or truncated tail cannot establish absence of
+  earlier errors. Read more when the decision depends on complete coverage.
+- Preserve distinctions between success, timeout, process exit and callback failure.
+- Do not stack lossy compressors blindly; use one summary with a raw-evidence recovery path.
 
-Prefer a probe that returns a **status**. Absence of an error in a log is not readiness.
+## Cost and anti-patterns
 
-## Anti-patterns
+Count model invocations, actual input/cached input/output tokens, retries and task
+outcomes. A blocking observation may wait without invoking the model; another host may
+return a running status and trigger another model step. Check the runtime rather than
+assuming every tool read has identical cost.
 
-- **`sleep N` as a readiness guess.** Replace with the recipe above. Fixed sleeps are
-  either too short (extra replay) or too long (dead time), and never both correct.
-- **Polling from the conversation.** Each poll turn = one context replay. A 10-poll wait
-  in a 200K-token context reads ~2M tokens to learn one boolean.
-- **Polling a job system that already pushes events.** If the runtime reports completion,
-  subscribe or collect once blocking. Polling a push-based queue is pure waste.
-- **`tail -f`, `watch`, interactive pagers.** They never terminate; the turn hangs until
-  an external timeout kills it, and the partial output still lands in context.
-- **Unbounded `until`.** Always a deadline and always a distinct exit code.
-- **Dumping the whole log while waiting.** Print the last N lines, or the matching lines.
-  A 5MB log in a wait step costs more than the wait itself.
-- **Waiting to "see if it settles."** If you can't name the condition, you don't want to
-  wait — you want to measure. Run the check once and read the result.
+Avoid repeated model-driven status checks, fixed sleeps used as readiness guesses,
+unbounded `tail -f`/loops, full-log dumps, and relaunching jobs because the callback is
+late. Event-based resumption may add one final model call; that can still beat many polls
+while keeping the user informed. Cache savings and provider billing vary.
 
-## Cost model
+## Policy block
 
-Cost of a wait ≈ **context size × number of wait steps**. It does not depend on wall-clock
-time at all. Consequences:
-
-- Two waits of 30 seconds in one call cost the same as one wait of 60 seconds.
-- Two waits in *separate* turns cost double, even if each is 1 second.
-- Cache hits make repeat sends cheaper but never free, and never faster for the user.
-
-So: minimise **steps**, not seconds. Always.
-
-## Reporting what happened
-
-When the wait ends, report the outcome, not the process:
-
-```
-build: ok (128s) · tests: 412 passed, 0 failed · artifacts: dist/app.zip (18.2MB)
-```
-
-Not a transcript of the polling. The next reader — human or agent — needs the state and
-the exit condition, not the attempts.
-
-## Policy block (paste into agent instructions)
-
-```
+```text
 Waiting policy:
-- Never wait across turns. One step, one wait.
-- Never sleep a fixed duration. Wait on a condition with a deadline and a distinct timeout code.
-- Long work: detach, return an id, collect ONCE with a blocking read at the end.
-- If the runtime pushes completion events, don't poll.
-- Print only the outcome: last N log lines or a status line, never the whole log.
-- A wait step must end with success | timeout | failure, distinguishable.
+- Short work: bounded blocking call. Readiness: bounded condition probe.
+- Long work: prefer managed completion events that reliably resume this conversation.
+- Before yielding, tell the user what is running and waiting; retain job/result identity.
+- No reliable callback: bounded output read, retain job ID, disclose the limitation.
+- Do not repeatedly invoke the model to poll or spawn an agent just to wait.
+- Silence or low local CPU during remote reasoning is not proof of a hang.
+- On completion/failure, verify the receipt and report once with evidence pointers.
 ```
