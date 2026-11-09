@@ -6,55 +6,59 @@ description: Decide whether to delegate work to a subagent or agent-crew member,
 # Dispatch Guard
 
 Delegation is a **context handoff**, and every handoff has a price. This skill decides
-whether the price is worth paying. It contains no model names, no project names, no vendor
-specifics — it must work unchanged on any machine, any provider, any repo.
+whether the price is worth paying. It uses vendor-neutral model tiers. Adapt these defaults to the host's actual
+context sharing, parallel execution, tool access and artifact support.
 
 ## The one principle
 
-> A subagent buys you an **isolated context**. That is the only thing it buys.
-> If the subtask doesn't need isolation, you paid for it and got nothing.
+> Default to inline work when the context is already loaded. Delegate when
+> isolation, independent parallel work or specialist capabilities provide a
+> concrete benefit that justifies the handoff.
 
-Everything below follows from that.
+The rules below are recommended defaults, not universal performance results.
 
 ## What a handoff actually costs
 
-Every dispatch pays all four, whether or not it "works":
+Check these four potential costs. Hosts with shared context or durable artifacts
+can reduce them; measure the actual handoff rather than assuming all four occur:
 
 1. **Restatement** — the parent must re-describe background the parent already holds.
-   Whatever the parent knows and the child cannot see gets rewritten, compressed, degraded.
+   Background unavailable to the child may need restating, with a risk of lost detail.
 2. **Re-derivation** — the child re-reads, re-greps, re-fetches sources the parent already
-   consumed. That work is done twice and paid for twice.
+   consumed. Count duplicate reads separately from necessary independent verification.
 3. **Loop overhead** — the child runs its own multi-step tool loop inside its own window.
    A task that is "one lookup" in a shared context becomes N turns in a fresh one.
-4. **Report loss** — the child returns prose. The parent reads the prose, not the evidence.
-   Anything the child saw but did not summarise is **gone**, and the parent cannot tell
-   whether it was gone or never existed.
+4. **Report loss** — prose-only returns can omit evidence needed by the parent.
+   Durable artifacts, source pointers and structured results reduce this risk;
+   verify that the parent can actually retrieve them.
 
-Cost scales with **(context the child must rebuild) × (turns it takes)**. It is not
-proportional to task size — a small task with a big context dependency is the most
-expensive dispatch there is.
+Context rebuilt and extra tool/model turns are useful cost drivers. They are not
+a billing formula: caching, runtime support and parallel latency also matter. A
+small task with a large context dependency can cost more to hand off than to do inline.
 
 ## Decide: inline or delegate
 
-Answer three questions. **Any "yes" on the left column means inline.**
+Use these questions as a default decision guide. A concrete capability or measured
+latency benefit can justify an exception; state that reason before dispatch.
 
 | Question | Inline (do it yourself) | Delegate |
 |---|---|---|
 | Does the subtask need facts I already loaded this session? | yes | no — it owns its own sources |
 | Will I need to reason about its intermediate detail, not just its conclusion? | yes | no — I only need the verdict |
 | Is the subtask exploring a question whose *shape* I can't state yet? | yes | no — I can state input scope + output contract up front |
-| Does it need my conversation history to be competent? | yes | never delegate |
-| Is it 1–3 tool calls of work? | yes | never delegate |
+| Does it need my conversation history to be competent? | yes | normally keep inline |
+| Is it 1–3 tool calls of work? | yes | normally keep inline |
 
 **Rule of thumb:** if you cannot write the child's **input scope** and **output contract**
 in two lines before dispatching, you are not ready to dispatch — you are still thinking.
 Think inline first, then delegate the mechanical part.
 
-## Patterns that always lose
+## Patterns that often add avoidable overhead
 
 - **Discussion split across agents.** "Have 6 personas discuss this" — they all need the
   same source material, none can see the others' moves, and the parent re-reads 6 essays.
-  One strong pass with a structured critique beats N monologues.
+  Prefer one structured pass unless independent perspectives have a defined,
+  measurable role.
 - **Reviewer agent on your own reasoning.** A blind reviewer can't see why you decided
   something, so it critiques a paraphrase of your conclusion. Either give it the artifact
   (not the reasoning) and accept that framing, or review inline.
@@ -65,7 +69,7 @@ Think inline first, then delegate the mechanical part.
 - **Recursive spawn** (an agent that spawns agents). Depth ≥ 2 means context has been
   restated at least twice. Ban it unless the recursion is the product.
 
-## Patterns that genuinely win
+## Patterns that can justify delegation
 
 - **Isolated bulk IO**: scan/transform hundreds of items, return only the distilled result.
   The parent would otherwise drown in raw output.
@@ -77,13 +81,26 @@ Think inline first, then delegate the mechanical part.
 
 ## Guardrails to keep on
 
-- **Cap fan-out per turn** (2–3). If you need more, the plan is wrong, not the cap.
+- **Default fan-out cap per turn**: 2–3. Raise it only for bounded independent work
+  with a concrete latency or throughput benefit and host capacity.
 - **Depth ≤ 1.** A child may not spawn.
 - **Every dispatch states**: input scope (exact files/URLs/IDs), output contract (length +
   what must be included), and what the child must NOT do (no file writes, no plan changes).
 - **No delegation of the decision itself.** The parent keeps judgement; children gather.
 - **Reconcile, don't concatenate.** N reports must collapse into one answer with conflicts
   named, otherwise the parent has just moved its reading problem one level down.
+
+## Two example decisions
+
+**Inline:** the parent has already read a function and its failing test. The next
+step is a two-line fix in that function. A new agent would need the same context,
+and the parent still needs to inspect the exact diff. Keep the edit and test inline.
+
+**Delegate:** three independent repositories need their public documentation links
+checked. Give each worker one repository, read-only scope, and a short result with
+file/line references. No worker needs another's findings. Independent execution
+may reduce elapsed time; compare total spend and correctness with an inline run
+before claiming a cost saving.
 
 ## Model placement (vendor-neutral tiers)
 
@@ -95,14 +112,15 @@ Think in tiers, not names:
 
 Placement rules:
 
-1. **The orchestrator must be T1.** Whoever decides what everyone else does is making the
-   highest-leverage decisions in the run. A weak orchestrator with strong workers produces
-   confident, cheap, wrong work.
+1. **Prefer T1 for ambiguous orchestration and final judgement.** Simple, well-specified
+   routing may need less reasoning. Choose capability from observed correctness
+   and failure cost, not a tier label alone.
 2. **Children should not silently inherit the parent's tier** if the parent is T1 and the
    child does mechanical work — that's paying T1 prices for T3 work. Conversely never let
    children inherit *downward*: a T3 parent with T3 children is a compounding error rate.
-3. **Skills beat extra agents.** A procedure written down once (a skill) is cheaper than an
-   agent rediscovering it per dispatch. Prefer: skill + strong single context → then agents.
+3. **Prefer reusable skills over repeated discovery.** A documented procedure can
+   reduce repeated work. Compare skill-loading and execution costs before claiming
+   savings over delegation.
 4. **Escalate on failure, don't parallelise on doubt.** When unsure, one strong pass;
    when a pass demonstrably fails, then split.
 
@@ -136,8 +154,8 @@ Do this once per environment, in five minutes:
    threshold. Inspect task independence and outcomes; delegated bulk work can legitimately
    dominate the total.
 4. Check the crew/agent config for: delegation allowed?, children inherit model?, and
-   **circular `delegatesTo` graphs** (A→B→A). Circles don't cost anything by themselves
-   but they signal that nobody owns a role, which shows up later as ping-pong dispatching.
+   **circular `delegatesTo` graphs** (A→B→A). A configured cycle is not proof of wasted
+   execution; inspect observed handoffs for ping-pong or unclear ownership.
 5. Write the result into the local policy block below. Re-run when the setup changes.
 
 ## Policy block (paste into agent instructions, keep short)
@@ -149,6 +167,7 @@ Delegation policy:
   both lines? Don't dispatch yet.
 - Max 3 dispatches per turn. Depth 1. Children never spawn.
 - Discussion, review-of-my-own-reasoning, and dependent chains stay in one context.
-- Orchestrator runs on the strongest tier available; mechanical children run cheaper.
+- Match orchestrator capability to judgement difficulty; use cheaper workers when
+  observed correctness supports it.
 - Report delegated spend alongside main spend, or don't claim the run's cost.
 ```

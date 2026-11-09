@@ -78,17 +78,38 @@ Choose a registry path, normally `~/.agents/tool-inventory.json`. Copy the examp
 for a new registry; never overwrite an existing one. Replace example source paths with
 actual tools on that machine. You can instead set `TOOL_INVENTORY` or pass `--registry`.
 
-Run directly from the repository or installed skill directory:
+Try the bundled sample without creating or changing your personal registry.
+From the **repository root**:
 
-```bash
-python3 skills/tool-inventory/scripts/tool_index.py find archive --os macos --limit 5
-python3 skills/tool-inventory/scripts/tool_index.py show archive-helper
-python3 skills/tool-inventory/scripts/tool_index.py check archive-helper
+```sh
+python3 skills/tool-inventory/scripts/tool_index.py --registry skills/tool-inventory/assets/catalog.example.json find lookup --os macos --limit 5
+python3 skills/tool-inventory/scripts/tool_index.py --registry skills/tool-inventory/assets/catalog.example.json show sample-search
+python3 skills/tool-inventory/scripts/tool_index.py --registry skills/tool-inventory/assets/catalog.example.json check sample-search
 ```
 
-On Windows replace `python3` with `python`, and use `--os windows`. An optional shell
-wrapper can name this command `tool-index`; skills-only installation does not add a
-binary to PATH. The example catalog does not establish tool availability on Windows.
+From the **installed `tool-inventory` skill directory** (the directory containing
+its SKILL.md, scripts and assets):
+
+```sh
+python3 scripts/tool_index.py --registry assets/catalog.example.json find lookup --os macos --limit 5
+python3 scripts/tool_index.py --registry assets/catalog.example.json show sample-search
+python3 scripts/tool_index.py --registry assets/catalog.example.json check sample-search
+```
+
+`find` returns the `sample-search` entry; `show` displays its metadata. `check`
+reports source/dependency availability without running the helper. The fixture's
+`./search_helper.py` is a placeholder, so a missing source is expected. A catalog
+match is not proof of an installed tool. Relative source paths are evaluated
+against the caller's working directory; use actual absolute canonical paths in
+a machine registry when invocation may start from other directories.
+
+For normal use after adapting a personal registry, omit `--registry` to use
+`~/.agents/tool-inventory.json`, or set `TOOL_INVENTORY` explicitly. Keep the global
+`--registry` option **before** the subcommand. Do not overwrite an existing registry.
+
+On Windows replace `python3` with `python`, and use `--os windows`. An optional
+shell wrapper can name this command `tool-index`; skills-only installation does
+not add a binary to PATH. The example catalog does not establish tool availability.
 
 `find`, `show`, `categories` and `check` read metadata. `check` examines paths and
 executable dependencies without running catalog commands; existence is not health or
